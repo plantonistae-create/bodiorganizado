@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel Pessoal — Agenda, Finanças e Parcelados</title>
+    <title>Painel Pessoal — Agenda, Finanças por Mês e Parceladas</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -32,7 +32,7 @@
                 <i data-lucide="zap" class="w-5 h-5"></i> Sincronização em Tempo Real (Firebase)
             </h2>
             <p class="text-xs text-[#8A8F98] leading-relaxed">
-                Insira suas credenciais do Firebase Firestore (plano gratuito Spark) e defina um ID de Sala para sincronizar agenda, finanças, parcelados e receitas instantaneamente entre seus dispositivos.
+                Insira suas credenciais do Firebase Firestore (plano gratuito Spark) e defina um ID de Sala para sincronizar agenda, faturas mensais, parceladas e receitas instantaneamente.
             </p>
             <div class="flex flex-col gap-3">
                 <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
@@ -91,7 +91,7 @@
                         <h1 class="font-serif text-2xl tracking-tight text-[#EDE6D8]">Painel Pessoal</h1>
                         <span id="sync-status" class="ml-3 text-[10px] font-mono px-2 py-0.5 rounded bg-[#2A313C] text-[#8A8F98]">Carregando...</span>
                     </div>
-                    <p class="text-xs text-[#8A8F98] mb-3">Agenda, finanças, PIX, receitas, parcelados e projetos em tempo real.</p>
+                    <p class="text-xs text-[#8A8F98] mb-3">Agenda, faturas mensais, parcelas automáticas, PIX e receitas.</p>
                 </div>
                 <button id="btn-open-config" class="text-xs text-[#8A8F98] hover:text-[#EDE6D8] flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#2A313C] bg-[#161B22] transition">
                     <i data-lucide="settings" class="w-3.5 h-3.5"></i> Configurações
@@ -121,7 +121,7 @@
 
         const TABS = [
           { id: "plantoes", label: "Agenda & Plantões", icon: "calendar", accent: "#C9A24B" },
-          { id: "financas", label: "Finanças & PIX", icon: "wallet", accent: "#4F8C82" },
+          { id: "financas", label: "Finanças & Faturas", icon: "wallet", accent: "#4F8C82" },
           { id: "investimentos", label: "Investimentos", icon: "trending-up", accent: "#7C8FD9" },
           { id: "projetos", label: "Projetos", icon: "target", accent: "#C2604A" },
         ];
@@ -135,12 +135,13 @@
             { id: "card2", nome: "Cartão 2" },
             { id: "card3", nome: "Cartão 3" },
           ],
-          transactions: [], // Gastos no cartão (com suporte a parcelas)
-          pixTransactions: [], // Novos gastos via PIX / Transferência
-          incomes: [], // Novas Receitas / Entradas
+          transactions: [],
+          pixTransactions: [],
+          incomes: [],
           investments: [],
           projects: [],
           shiftCursor: { y: new Date().getFullYear(), m: new Date().getMonth() },
+          financeCursor: { y: new Date().getFullYear(), m: new Date().getMonth() },
           selectedDay: todayISO(),
           showShiftForm: false,
           showAppointmentForm: false,
@@ -149,12 +150,12 @@
           
           activeCardId: "card1",
           showTxForm: false,
-          showPixForm: false, // Modal PIX
-          showIncomeForm: false, // Modal Receita
+          showPixForm: false,
+          showIncomeForm: false,
           editingCardNameId: null,
-          txForm: { descricao: "", valor: "", categoria: CATS[0], data: todayISO(), parcelas: "1", parcelaAtual: "1" },
+          txForm: { descricao: "", valor: "", categoria: CATS[0], data: todayISO(), parcelas: "1" },
           pixForm: { descricao: "", valor: "", categoria: CATS[0], data: todayISO(), destino: "" },
-          incomeForm: { descricao: "", valor: "", data: todayISO(), categoria: "Salário / Plantões" },
+          incomeForm: { descricao: "", valor: "", data: todayISO() },
 
           showInvForm: false,
           invForm: { nome: "", tipo: "Renda Fixa", valor: "", instituicao: "", data: todayISO() },
@@ -172,7 +173,7 @@
 
         function loadLocal() {
           try {
-            const saved = localStorage.getItem("painel_pessoal_data_v4");
+            const saved = localStorage.getItem("painel_pessoal_data_v5");
             if (saved) {
               const parsed = JSON.parse(saved);
               state.shifts = parsed.shifts || [];
@@ -189,7 +190,7 @@
 
         function saveLocal() {
           try {
-            localStorage.setItem("painel_pessoal_data_v4", JSON.stringify({
+            localStorage.setItem("painel_pessoal_data_v5", JSON.stringify({
               shifts: state.shifts,
               appointments: state.appointments,
               cards: state.cards,
@@ -237,7 +238,7 @@
         window.addEventListener("DOMContentLoaded", () => {
           loadLocal();
 
-          const savedCfg = localStorage.getItem("painel_firebase_cfg_v4");
+          const savedCfg = localStorage.getItem("painel_firebase_cfg_v5");
           if (savedCfg) {
             try {
               const cfg = JSON.parse(savedCfg);
@@ -275,7 +276,7 @@
               return;
             }
 
-            localStorage.setItem("painel_firebase_cfg_v4", JSON.stringify(cfg));
+            localStorage.setItem("painel_firebase_cfg_v5", JSON.stringify(cfg));
             initFirebase(cfg);
             document.getElementById("config-modal").classList.add("hidden");
             document.getElementById("app-container").classList.remove("hidden");
@@ -313,7 +314,7 @@
               appId: cfg.appId
             });
             db = getFirestore(app);
-            docRef = doc(db, "paineis_v4", cfg.room);
+            docRef = doc(db, "paineis_v5", cfg.room);
             isSyncing = true;
 
             document.getElementById("sync-status").innerText = "Conectando...";
@@ -516,55 +517,90 @@
           render();
         };
 
-        // ================= FINANÇAS, PIX E RECEITAS =================
+        // ================= FINANÇAS, PIX, RECEITAS & PARCELAS AUTOMÁTICAS =================
         function renderFinancas(accent) {
+          const { y, m } = state.financeCursor;
+          const currentMonthKey = `${y}-${String(m + 1).padStart(2, "0")}`;
+
+          let activeCardTx = [];
+          state.transactions.forEach(t => {
+            const totalParcelas = Number(t.parcelas) || 1;
+            const [pY, pM, pD] = t.data.split("-").map(Number);
+            
+            for (let i = 0; i < totalParcelas; i++) {
+              let targetM = pM - 1 + i;
+              let targetY = pY + Math.floor(targetM / 12);
+              targetM = targetM % 12;
+              
+              const installmentMonthKey = `${targetY}-${String(targetM + 1).padStart(2, "0")}`;
+              if (installmentMonthKey === currentMonthKey) {
+                activeCardTx.push({
+                  ...t,
+                  parcelaAtual: i + 1,
+                  totalParcelas: totalParcelas,
+                  displayId: `${t.id}-p${i+1}`
+                });
+              }
+            }
+          });
+
+          const activePix = state.pixTransactions.filter(p => p.data.startsWith(currentMonthKey));
+          const activeIncomes = state.incomes.filter(i => i.data.startsWith(currentMonthKey));
+
           const card = state.cards.find(c => c.id === state.activeCardId) || state.cards[0];
-          const cardTx = state.transactions.filter(t => t.cardId === card?.id).sort((a,b) => b.data.localeCompare(a.data));
-          const cardTotal = cardTx.reduce((s, t) => s + Number(t.valor || 0), 0);
+          const cardTxFiltered = activeCardTx.filter(t => t.cardId === card?.id).sort((a,b) => b.data.localeCompare(a.data));
+          const cardTotal = cardTxFiltered.reduce((s, t) => s + Number(t.valor || 0), 0);
           
-          const totalCartoes = state.transactions.reduce((s, t) => s + Number(t.valor || 0), 0);
-          const totalPix = state.pixTransactions.reduce((s, p) => s + Number(p.valor || 0), 0);
-          const totalDespesas = totalCartoes + totalPix;
-          const totalReceitas = state.incomes.reduce((s, i) => s + Number(i.valor || 0), 0);
-          const saldoRemanescente = totalReceitas - totalDespesas;
+          const totalCartoesMonth = activeCardTx.reduce((s, t) => s + Number(t.valor || 0), 0);
+          const totalPixMonth = activePix.reduce((s, p) => s + Number(p.valor || 0), 0);
+          const totalDespesasMonth = totalCartoesMonth + totalPixMonth;
+          const totalReceitasMonth = activeIncomes.reduce((s, i) => s + Number(i.valor || 0), 0);
+          const saldoRemanescenteMonth = totalReceitasMonth - totalDespesasMonth;
 
           return `
             <div class="flex flex-col gap-6">
-              <!-- Cards de Resumo Financeiro (Receitas, Despesas e Saldo Remanescente) -->
+              <!-- Seletor de Mês da Aba de Finanças -->
+              <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-4 flex items-center justify-between">
+                <button onclick="window.changeFinanceMonth(-1)" class="p-1.5 rounded hover:bg-[#232B35] text-[#8A8F98]"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                <h2 class="font-serif text-xl tracking-wide" style="color: ${accent}">Mês Referência: ${monthNames[m]} ${y}</h2>
+                <button onclick="window.changeFinanceMonth(1)" class="p-1.5 rounded hover:bg-[#232B35] text-[#8A8F98]"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+              </div>
+
+              <!-- Cards de Resumo Financeiro do Mês -->
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-4 flex flex-col justify-between">
                   <div class="flex justify-between items-center text-xs uppercase tracking-widest text-[#8A8F98]">
-                    <span>Total de Receitas</span>
+                    <span>Receitas do Mês</span>
                     <button onclick="window.openIncomeForm()" class="text-emerald-400 hover:text-emerald-300 font-bold px-1 text-sm" title="Adicionar Receita">＋</button>
                   </div>
-                  <div class="font-mono text-2xl mt-2 text-emerald-400">${brl(totalReceitas)}</div>
-                  <span class="text-[10px] text-[#8A8F98] mt-1">${state.incomes.length} entrada(s) registrada(s)</span>
+                  <div class="font-mono text-2xl mt-2 text-emerald-400">${brl(totalReceitasMonth)}</div>
+                  <span class="text-[10px] text-[#8A8F98] mt-1">${activeIncomes.length} entrada(s) neste mês</span>
                 </div>
 
                 <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-4 flex flex-col justify-between">
                   <div class="flex justify-between items-center text-xs uppercase tracking-widest text-[#8A8F98]">
-                    <span>Total de Despesas</span>
-                    <span class="text-rose-400 font-mono text-xs">Cartões + PIX</span>
+                    <span>Despesas do Mês</span>
+                    <span class="text-rose-400 font-mono text-xs">Faturas + PIX</span>
                   </div>
-                  <div class="font-mono text-2xl mt-2 text-rose-400">${brl(totalDespesas)}</div>
-                  <span class="text-[10px] text-[#8A8F98] mt-1">Cartões: ${brl(totalCartoes)} | PIX: ${brl(totalPix)}</span>
+                  <div class="font-mono text-2xl mt-2 text-rose-400">${brl(totalDespesasMonth)}</div>
+                  <span class="text-[10px] text-[#8A8F98] mt-1">Faturas: ${brl(totalCartoesMonth)} | PIX: ${brl(totalPixMonth)}</span>
                 </div>
 
-                <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-4 flex flex-col justify-between border-l-4" style="border-left-color: ${saldoRemanescente >= 0 ? '#4F8C82' : '#C2604A'}">
+                <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-4 flex flex-col justify-between border-l-4" style="border-left-color: ${saldoRemanescenteMonth >= 0 ? '#4F8C82' : '#C2604A'}">
                   <span class="text-xs uppercase tracking-widest text-[#8A8F98]">Saldo Remanescente</span>
-                  <div class="font-mono text-2xl mt-2" style="color: ${saldoRemanescente >= 0 ? accent : '#C2604A'}">${brl(saldoRemanescente)}</div>
-                  <span class="text-[10px] text-[#8A8F98] mt-1">Receitas menos despesas totais</span>
+                  <div class="font-mono text-2xl mt-2" style="color: ${saldoRemanescenteMonth >= 0 ? accent : '#C2604A'}">${brl(saldoRemanescenteMonth)}</div>
+                  <span class="text-[10px] text-[#8A8F98] mt-1">Receitas menos despesas do mês</span>
                 </div>
               </div>
 
-              <!-- Seção de Cartões de Crédito (com suporte a parcelas) -->
+              <!-- Seção de Cartões de Crédito -->
               <div class="flex flex-col gap-3">
                 <div class="flex items-center justify-between">
-                  <h3 class="font-serif text-lg text-[#EDE6D8]">Cartões de Crédito (Gastos e Parcelas)</h3>
+                  <h3 class="font-serif text-lg text-[#EDE6D8]">Faturas dos Cartões (${monthNames[m]})</h3>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {state.cards.map(c => {
-                    const total = state.transactions.filter(t => t.cardId === c.id).reduce((s, t) => s + Number(t.valor || 0), 0);
+                  ${state.cards.map(c => {
+                    const totalC = activeCardTx.filter(t => t.cardId === c.id).reduce((s, t) => s + Number(t.valor || 0), 0);
                     const active = c.id === state.activeCardId;
                     const isEditing = state.editingCardNameId === c.id;
                     return `
@@ -577,57 +613,57 @@
                             <span class="text-xs uppercase tracking-wide text-[#8A8F98]" onclick="event.stopPropagation(); window.editCardName('${c.id}')">${c.nome} ✎</span>
                           `}
                         </div>
-                        <div class="font-mono text-lg" style="color: ${active ? accent : "#EDE6D8"}">${brl(total)}</div>
-                        <div class="text-[10px] text-[#8A8F98] mt-1">${state.transactions.filter(t => t.cardId === c.id).length} lançamento(s)</div>
+                        <div class="font-mono text-lg" style="color: ${active ? accent : "#EDE6D8"}">${brl(totalC)}</div>
+                        <div class="text-[10px] text-[#8A8F98] mt-1">${activeCardTx.filter(t => t.cardId === c.id).length} item(ns) na fatura</div>
                       </button>
                     `;
                   }).join("")}
                 </div>
               </div>
 
-              <!-- Lançamentos do Cartão Selecionado -->
+              <!-- Lançamentos do Cartão no Mês Selecionado -->
               <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-4">
                 <div class="flex items-center justify-between mb-3">
-                  <h3 class="text-sm font-serif text-[#EDE6D8]">${card?.nome} — Fatura e Parcelados</h3>
+                  <h3 class="text-sm font-serif text-[#EDE6D8]">${card?.nome} — Fatura de ${monthNames[m]}</h3>
                   <button onclick="window.openTxForm()" class="p-1.5 rounded-md flex items-center gap-1 text-xs font-semibold" style="background: ${accent}; color: #12171E;">
-                    <i data-lucide="plus" class="w-4 h-4"></i> Novo gasto no cartão
+                    <i data-lucide="plus" class="w-4 h-4"></i> Nova compra parcelada
                   </button>
                 </div>
                 <div class="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
-                  ${cardTx.length === 0 ? `<p class="text-xs text-[#8A8F98]">Nenhum gasto registrado neste cartão.</p>` : ""}
-                  ${cardTx.map(t => `
+                  ${cardTxFiltered.length === 0 ? `<p class="text-xs text-[#8A8F98]">Nenhum gasto neste cartão para ${monthNames[m]}.</p>` : ""}
+                  ${cardTxFiltered.map(t => `
                     <div class="flex items-center justify-between bg-[#12171E] border border-[#2A313C] rounded-lg px-3 py-2 text-sm">
                       <div>
                         <div class="text-[#EDE6D8] flex items-center gap-2">
                           <span>${t.descricao}</span>
                           ${Number(t.parcelas) > 1 ? `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#232B35] text-[#C9A24B]">Parc. ${t.parcelaAtual}/${t.parcelas}</span>` : ""}
                         </div>
-                        <div class="text-[10px] text-[#8A8F98] font-mono">${t.data} · ${t.categoria}</div>
+                        <div class="text-[10px] text-[#8A8F98] font-mono">Compra em ${t.data} · ${t.categoria}</div>
                       </div>
                       <div class="flex items-center gap-3">
                         <span class="font-mono text-[#C2604A]">${brl(t.valor)}</span>
-                        <button onclick="window.removeTx('${t.id}')" class="text-[#8A8F98] hover:text-[#C2604A]"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="window.removeTx('${t.id}')" title="Excluir compra original" class="text-[#8A8F98] hover:text-[#C2604A]"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                       </div>
                     </div>
                   `).join("")}
                 </div>
                 <div class="mt-3 pt-3 border-t border-[#2A313C] flex justify-between text-sm font-mono">
-                  <span class="text-[#8A8F98]">Total neste cartão</span>
+                  <span class="text-[#8A8F98]">Total fatura ${monthNames[m]} (${card?.nome})</span>
                   <span style="color: ${accent}">${brl(cardTotal)}</span>
                 </div>
               </div>
 
-              <!-- Seção de Gastos via PIX / Transferências -->
+              <!-- Gastos via PIX no Mês -->
               <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-4">
                 <div class="flex items-center justify-between mb-3">
-                  <h3 class="text-sm font-serif text-[#EDE6D8]">Gastos via PIX / Transferências (Conta Corrente)</h3>
+                  <h3 class="text-sm font-serif text-[#EDE6D8]">Gastos via PIX / Transferências (${monthNames[m]})</h3>
                   <button onclick="window.openPixForm()" class="p-1.5 rounded-md flex items-center gap-1 text-xs font-semibold bg-cyan-700 text-[#EDE6D8] hover:opacity-95">
                     <i data-lucide="plus" class="w-4 h-4"></i> Novo PIX / Gasto
                   </button>
                 </div>
-                <div class="flex flex-col gap-2 max-h-[260px] overflow-y-auto pr-1">
-                  ${state.pixTransactions.length === 0 ? `<p class="text-xs text-[#8A8F98]">Nenhum gasto por PIX registrado.</p>` : ""}
-                  ${state.pixTransactions.sort((a,b)=>b.data.localeCompare(a.data)).map(p => `
+                <div class="flex flex-col gap-2 max-h-[240px] overflow-y-auto pr-1">
+                  ${activePix.length === 0 ? `<p class="text-xs text-[#8A8F98]">Nenhum PIX registrado em ${monthNames[m]}.</p>` : ""}
+                  ${activePix.sort((a,b)=>b.data.localeCompare(a.data)).map(p => `
                     <div class="flex items-center justify-between bg-[#12171E] border border-[#2A313C] rounded-lg px-3 py-2 text-sm">
                       <div>
                         <div class="text-[#EDE6D8]">${p.descricao} ${p.destino ? '<span class="text-xs text-[#8A8F98]">para ' + p.destino + '</span>' : ''}</div>
@@ -641,13 +677,22 @@
                   `).join("")}
                 </div>
                 <div class="mt-3 pt-3 border-t border-[#2A313C] flex justify-between text-sm font-mono">
-                  <span class="text-[#8A8F98]">Total em PIX</span>
-                  <span class="text-rose-400">${brl(totalPix)}</span>
+                  <span class="text-[#8A8F98]">Total PIX em ${monthNames[m]}</span>
+                  <span class="text-rose-400">${brl(totalPixMonth)}</span>
                 </div>
               </div>
             </div>
           `;
         }
+
+        window.changeFinanceMonth = (dir) => {
+          let { y, m } = state.financeCursor;
+          m += dir;
+          if (m > 11) { m = 0; y++; }
+          else if (m < 0) { m = 11; y--; }
+          state.financeCursor = { y, m };
+          render();
+        };
 
         window.setActiveCard = (id) => { state.activeCardId = id; render(); };
         window.editCardName = (id) => { state.editingCardNameId = id; render(); };
@@ -676,11 +721,6 @@
 
         window.openIncomeForm = () => { state.showIncomeForm = true; render(); };
         window.closeIncomeForm = () => { state.showIncomeForm = false; render(); };
-        window.removeIncome = (id) => {
-          state.incomes = state.incomes.filter(i => i.id !== id);
-          persistData();
-          render();
-        };
 
         // ================= INVESTIMENTOS =================
         function renderInvestimentos(accent) {
@@ -927,12 +967,12 @@
               <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onclick="window.closeTxForm()">
                 <div class="w-full max-w-md bg-[#1B2129] border border-[#2A313C] rounded-xl shadow-2xl p-5 flex flex-col gap-3" onclick="event.stopPropagation()">
                   <div class="flex items-center justify-between border-b border-[#2A313C] pb-3">
-                    <h3 class="font-serif text-lg" style="color: ${accent}">Novo gasto — ${card?.nome}</h3>
+                    <h3 class="font-serif text-lg" style="color: ${accent}">Nova compra — ${card?.nome}</h3>
                     <button onclick="window.closeTxForm()" class="text-[#8A8F98] hover:text-[#EDE6D8]"><i data-lucide="x" class="w-4 h-4"></i></button>
                   </div>
                   <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
-                    Descrição do gasto
-                    <input id="f-tx-desc" class="input-cls" placeholder="Ex: Compra na Amazon" value="${state.txForm.descricao}">
+                    Descrição da compra
+                    <input id="f-tx-desc" class="input-cls" placeholder="Ex: TV Nova" value="${state.txForm.descricao}">
                   </label>
                   <div class="grid grid-cols-2 gap-3">
                     <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
@@ -940,20 +980,14 @@
                       <input id="f-tx-valor" type="number" class="input-cls" placeholder="0,00" value="${state.txForm.valor}">
                     </label>
                     <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
-                      Data
+                      Data da 1ª Compra
                       <input id="f-tx-data" type="date" class="input-cls" value="${state.txForm.data}">
                     </label>
                   </div>
-                  <div class="grid grid-cols-2 gap-3">
-                    <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
-                      Parcela Atual
-                      <input id="f-tx-atual" type="number" class="input-cls" value="${state.txForm.parcelaAtual}">
-                    </label>
-                    <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
-                      Total de Parcelas
-                      <input id="f-tx-parcelas" type="number" class="input-cls" value="${state.txForm.parcelas}">
-                    </label>
-                  </div>
+                  <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
+                    Número de Parcelas (ex: 1 para à vista, 10 para 10x)
+                    <input id="f-tx-parcelas" type="number" class="input-cls" value="${state.txForm.parcelas}">
+                  </label>
                   <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
                     Categoria
                     <select id="f-tx-cat" class="input-cls">
@@ -961,7 +995,7 @@
                     </select>
                   </label>
                   <button onclick="window.submitTxForm()" class="mt-2 rounded-md py-2 text-sm font-semibold" style="background: ${accent}; color: #12171E;">
-                    Salvar gasto parcelado
+                    Salvar compra e gerar parcelas
                   </button>
                 </div>
               </div>
@@ -1135,10 +1169,9 @@
           const data = document.getElementById("f-tx-data").value;
           const categoria = document.getElementById("f-tx-cat").value;
           const parcelas = document.getElementById("f-tx-parcelas").value || "1";
-          const parcelaAtual = document.getElementById("f-tx-atual").value || "1";
 
           if (!descricao || !valor) return;
-          state.transactions.push({ id: uid(), cardId: state.activeCardId, descricao, valor, data, categoria, parcelas, parcelaAtual });
+          state.transactions.push({ id: uid(), cardId: state.activeCardId, descricao, valor, data, categoria, parcelas });
           state.showTxForm = false;
           persistData();
           render();
