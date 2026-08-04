@@ -25,15 +25,16 @@
     </style>
 </head>
 <body class="min-h-screen w-full">
-    <!-- Config Modal (Oculto automaticamente pois as credenciais já vêm embutidas) -->
+    <!-- Config Modal (Oculto, pois as chaves já estão embutidas) -->
     <div id="config-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
         <div class="w-full max-w-lg bg-[#1B2129] border border-[#2A313C] rounded-xl shadow-2xl p-6 flex flex-col gap-4">
             <h2 class="font-serif text-xl text-[#C9A24B] flex items-center gap-2">
                 <i data-lucide="zap" class="w-5 h-5"></i> Sincronização em Tempo Real (Firebase)
             </h2>
             <p class="text-xs text-[#8A8F98] leading-relaxed">
-                As configurações estão embutidas automaticamente.
+                As configurações já estão embutidas no código.
             </p>
+            <button onclick="document.getElementById('config-modal').classList.add('hidden')" class="px-5 py-2 rounded-md text-sm font-semibold bg-[#C9A24B] text-[#12171E]">Fechar</button>
         </div>
     </div>
 
@@ -129,7 +130,7 @@
 
         function loadLocal() {
           try {
-            const saved = localStorage.getItem("painel_pessoal_data_v5");
+            const saved = localStorage.getItem("painel_pessoal_bodi");
             if (saved) {
               const parsed = JSON.parse(saved);
               state.shifts = parsed.shifts || [];
@@ -146,7 +147,7 @@
 
         function saveLocal() {
           try {
-            localStorage.setItem("painel_pessoal_data_v5", JSON.stringify({
+            localStorage.setItem("painel_pessoal_bodi", JSON.stringify({
               shifts: state.shifts,
               appointments: state.appointments,
               cards: state.cards,
@@ -194,15 +195,15 @@
         window.addEventListener("DOMContentLoaded", () => {
           loadLocal();
 
-          // Credenciais embutidas diretamente para conexão automática
+          // Credenciais embutidas automaticamente
           const autoConfig = {
-            room: "painel-principal",
-            apiKey: "",
-            authDomain: "",
-            projectId: "",
-            storageBucket: "",
-            messagingSenderId: "",
-            appId: ""
+            room: "bodi-principal",
+            apiKey: "AIzaSyACRXQYP49KIEtBvWbwFjVqLcu1363GWHk",
+            authDomain: "bodi-organizado.firebaseapp.com",
+            projectId: "bodi-organizado",
+            storageBucket: "bodi-organizado.firebasestorage.app",
+            messagingSenderId: "517104557507",
+            appId: "1:517104557507:web:90c7378311ee6d63e27176"
           };
 
           if (autoConfig.projectId) {
@@ -231,7 +232,7 @@
               appId: cfg.appId
             });
             db = getFirestore(app);
-            docRef = doc(db, "paineis_v5", cfg.room);
+            docRef = doc(db, "paineis_v7", cfg.room);
             isSyncing = true;
 
             document.getElementById("sync-status").innerText = "Conectando...";
