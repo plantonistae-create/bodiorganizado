@@ -115,7 +115,10 @@
           incomeForm: { descricao: "", valor: "", data: todayISO() },
 
           showInvForm: false,
-          invForm: { nome: "", tipo: "Renda Fixa", valor: "", instituicao: "", data: todayISO() },
+          invForm: { nome: "", tipo: "Renda Fixa", indexador: "CDI", taxa: "100", valor: "", instituicao: "", data: todayISO() },
+          rates: { cdi: null, selic: null, ipca12: null },
+          ratesUpdatedAt: null,
+          ratesLoading: false,
           showProjForm: false,
           projForm: { titulo: "", descricao: "", prazo: "" },
           newTaskText: {}
@@ -158,6 +161,82 @@
               projects: state.projects
             }));
           } catch(e) { console.error(e); }
+        }
+
+        // ================= TAXAS AUTOMÁTICAS (Banco Central - SGS) =================
+        // Séries: 432 = Meta Selic (% a.a.) | 4391 = CDI acumulado no mês anualizado (% a.a.) | 13522 = IPCA acumulado 12 meses (%)
+        const RATE_SERIES = { selic: 432, cdi: 4391, ipca12: 13522 };
+        const RATE_LABELS = { selic: "SELIC", cdi: "CDI", ipca12: "IPCA (12m)" };
+
+        async function fetchRates() {
+          state.ratesLoading = true;
+          render();
+          try {
+            const entries = await Promise.all(
+              Object.entries(RATE_SERIES).map(([key, code]) =>
+                fetch(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.${code}/dados/ultimos/1?formato=json`)
+                  .then(r => r.json())
+                  .then(d => [key, { valor: parseFloat(d[0].valor.replace(",", ".")), data: d[0].data }])
+                  .catch(() => [key, null])
+              )
+            );
+            entries.forEach(([key, val]) => { if (val) state.rates[key] = val; });
+            state.ratesUpdatedAt = new Date().toISOString();
+          } catch (e) {
+            console.error("Erro ao buscar taxas do Banco Central:", e);
+          }
+          state.ratesLoading = false;
+          render();
+        }
+
+        window.refreshRates = () => fetchRates();
+
+        // Calcula o valor estimado atual de uma posição com base no indexador vinculado
+        function calcValorAtualizado(inv) {
+          const valorAplicado = Number(inv.valor) || 0;
+          if (!inv.data || !inv.indexador || inv.indexador === "Nenhum") return valorAplicado;
+
+          const dataAplic = new Date(inv.data + "T00:00:00");
+          const hoje = new Date();
+          const dias = Math.max(0, (hoje - dataAplic) / (1000 * 60 * 60 * 24));
+          const anos = dias / 365;
+          const taxaRef = Number(inv.taxa) || 0;
+
+          let taxaAnual = null;
+          if (inv.indexador === "CDI" && state.rates.cdi?.valor != null) {
+            taxaAnual = (state.rates.cdi.valor / 100) * (taxaRef / 100);
+          } else if (inv.indexador === "SELIC" && state.rates.selic?.valor != null) {
+            taxaAnual = (state.rates.selic.valor / 100) * (taxaRef / 100);
+          } else if (inv.indexador === "IPCA+" && state.rates.ipca12?.valor != null) {
+            taxaAnual = (state.rates.ipca12.valor / 100) + (taxaRef / 100);
+          } else if (inv.indexador === "Prefixado") {
+            taxaAnual = taxaRef / 100;
+          }
+
+          if (taxaAnual == null) return valorAplicado;
+          return valorAplicado * Math.pow(1 + taxaAnual, anos);
+        }
+
+        // Retorna um rótulo legível da taxa vinculada, ex: "100% do CDI (13,25% a.a.)"
+        function labelIndexador(inv) {
+          if (!inv.indexador || inv.indexador === "Nenhum") return "Sem indexador";
+          const taxaRef = Number(inv.taxa) || 0;
+          if (inv.indexador === "CDI") {
+            const atual = state.rates.cdi?.valor;
+            return `${taxaRef}% do CDI${atual != null ? ` (CDI atual: ${atual.toFixed(2)}% a.a.)` : ""}`;
+          }
+          if (inv.indexador === "SELIC") {
+            const atual = state.rates.selic?.valor;
+            return `${taxaRef}% da SELIC${atual != null ? ` (SELIC atual: ${atual.toFixed(2)}% a.a.)` : ""}`;
+          }
+          if (inv.indexador === "IPCA+") {
+            const atual = state.rates.ipca12?.valor;
+            return `IPCA + ${taxaRef}% a.a.${atual != null ? ` (IPCA 12m: ${atual.toFixed(2)}%)` : ""}`;
+          }
+          if (inv.indexador === "Prefixado") {
+            return `Prefixado ${taxaRef}% a.a.`;
+          }
+          return inv.indexador;
         }
 
         function persistData() {
@@ -218,6 +297,7 @@
           });
 
           render();
+          fetchRates();
         });
 
         function initFirebase(cfg) {
@@ -643,20 +723,29 @@
         // ================= INVESTIMENTOS =================
         function renderInvestimentos(accent) {
           const total = state.investments.reduce((s, i) => s + Number(i.valor || 0), 0);
+          const totalAtualizado = state.investments.reduce((s, i) => s + calcValorAtualizado(i), 0);
+          const rendimentoTotal = totalAtualizado - total;
           const byTypeMap = {};
-          state.investments.forEach(i => { byTypeMap[i.tipo] = (byTypeMap[i.tipo] || 0) + Number(i.valor || 0); });
+          state.investments.forEach(i => { byTypeMap[i.tipo] = (byTypeMap[i.tipo] || 0) + calcValorAtualizado(i); });
           const byType = Object.entries(byTypeMap).sort((a,b) => b[1] - a[1]);
+
+          const rateUpdatedLabel = state.ratesUpdatedAt
+            ? new Date(state.ratesUpdatedAt).toLocaleString("pt-BR")
+            : "ainda não sincronizado";
 
           return `
             <div class="flex flex-col gap-6">
               <div class="grid sm:grid-cols-2 gap-4">
                 <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-5 flex flex-col items-start">
-                  <span class="text-xs uppercase tracking-widest text-[#8A8F98]">Patrimônio investido</span>
-                  <span class="font-mono text-3xl mt-2" style="color: ${accent}">${brl(total)}</span>
-                  <span class="text-xs text-[#8A8F98] mt-1">${state.investments.length} posição(ões)</span>
+                  <span class="text-xs uppercase tracking-widest text-[#8A8F98]">Patrimônio investido (atualizado automaticamente)</span>
+                  <span class="font-mono text-3xl mt-2" style="color: ${accent}">${brl(totalAtualizado)}</span>
+                  <span class="text-xs text-[#8A8F98] mt-1">
+                    ${state.investments.length} posição(ões) · aportado: <span class="font-mono">${brl(total)}</span>
+                    · rendimento: <span class="font-mono ${rendimentoTotal >= 0 ? "text-emerald-400" : "text-[#C2604A]"}">${rendimentoTotal >= 0 ? "+" : ""}${brl(rendimentoTotal)}</span>
+                  </span>
                 </div>
                 <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-5">
-                  <span class="text-xs uppercase tracking-widest text-[#8A8F98]">Por tipo</span>
+                  <span class="text-xs uppercase tracking-widest text-[#8A8F98]">Por tipo (valor atualizado)</span>
                   <div class="mt-2 flex flex-col gap-1.5">
                     ${byType.length === 0 ? `<span class="text-xs text-[#8A8F98]">Sem dados ainda.</span>` : ""}
                     ${byType.map(([t, v]) => `
@@ -670,29 +759,74 @@
               </div>
 
               <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-4">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs uppercase tracking-widest text-[#8A8F98]">Taxas de referência (Banco Central)</span>
+                  <button onclick="window.refreshRates()" class="flex items-center gap-1.5 text-[10px] font-mono px-2 py-1 rounded border border-[#2A313C] text-[#8A8F98] hover:text-[#EDE6D8]" ${state.ratesLoading ? "disabled" : ""}>
+                    <i data-lucide="refresh-cw" class="w-3 h-3 ${state.ratesLoading ? "animate-spin" : ""}"></i> ${state.ratesLoading ? "Atualizando..." : "Atualizar"}
+                  </button>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  <div class="bg-[#12171E] border border-[#2A313C] rounded-lg px-3 py-2 text-center">
+                    <div class="text-[10px] text-[#8A8F98] uppercase">CDI</div>
+                    <div class="font-mono text-sm" style="color: ${accent}">${state.rates.cdi?.valor != null ? state.rates.cdi.valor.toFixed(2) + "% a.a." : "—"}</div>
+                  </div>
+                  <div class="bg-[#12171E] border border-[#2A313C] rounded-lg px-3 py-2 text-center">
+                    <div class="text-[10px] text-[#8A8F98] uppercase">SELIC</div>
+                    <div class="font-mono text-sm" style="color: ${accent}">${state.rates.selic?.valor != null ? state.rates.selic.valor.toFixed(2) + "% a.a." : "—"}</div>
+                  </div>
+                  <div class="bg-[#12171E] border border-[#2A313C] rounded-lg px-3 py-2 text-center">
+                    <div class="text-[10px] text-[#8A8F98] uppercase">IPCA (12m)</div>
+                    <div class="font-mono text-sm" style="color: ${accent}">${state.rates.ipca12?.valor != null ? state.rates.ipca12.valor.toFixed(2) + "%" : "—"}</div>
+                  </div>
+                </div>
+                <div class="text-[10px] text-[#8A8F98] mt-2">Última sincronização: ${rateUpdatedLabel}</div>
+              </div>
+
+              <div class="bg-[#161B22] border border-[#2A313C] rounded-xl p-4">
                 <div class="flex items-center justify-between mb-3">
                   <h3 class="font-serif text-lg text-[#EDE6D8]">Posições</h3>
                   <button onclick="window.openInvForm()" class="p-1.5 rounded-md" style="background: ${accent}; color: #12171E;"><i data-lucide="plus" class="w-4 h-4"></i></button>
                 </div>
                 <div class="flex flex-col gap-2">
                   ${state.investments.length === 0 ? `<p class="text-xs text-[#8A8F98]">Nenhum investimento registrado.</p>` : ""}
-                  ${state.investments.map(i => `
+                  ${state.investments.map(i => {
+                    const atualizado = calcValorAtualizado(i);
+                    const rendimento = atualizado - Number(i.valor || 0);
+                    return `
                     <div class="flex items-center justify-between bg-[#12171E] border border-[#2A313C] rounded-lg px-3 py-2 text-sm">
                       <div>
                         <div class="text-[#EDE6D8]">${i.nome}</div>
                         <div class="text-[10px] text-[#8A8F98] font-mono">${i.tipo} · ${i.instituicao || "—"} · ${i.data}</div>
+                        <div class="text-[10px] font-mono mt-0.5" style="color: ${accent}">${labelIndexador(i)}</div>
                       </div>
                       <div class="flex items-center gap-3">
-                        <span class="font-mono" style="color: ${accent}">${brl(i.valor)}</span>
+                        <div class="text-right">
+                          <div class="font-mono" style="color: ${accent}">${brl(atualizado)}</div>
+                          ${rendimento !== 0 ? `<div class="text-[10px] font-mono ${rendimento > 0 ? "text-emerald-400" : "text-[#C2604A]"}">${rendimento > 0 ? "+" : ""}${brl(rendimento)}</div>` : ""}
+                        </div>
                         <button onclick="window.removeInv('${i.id}')" class="text-[#8A8F98] hover:text-[#C2604A]"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                       </div>
                     </div>
-                  `).join("")}
+                  `;}).join("")}
                 </div>
               </div>
             </div>
           `;
         }
+
+        function taxaLabel(indexador) {
+          if (indexador === "CDI") return "% do CDI";
+          if (indexador === "SELIC") return "% da SELIC";
+          if (indexador === "IPCA+") return "Taxa adicional (% a.a.)";
+          if (indexador === "Prefixado") return "Taxa prefixada (% a.a.)";
+          return "Taxa (não aplicável)";
+        }
+
+        window.onIndexadorChange = () => {
+          const indexador = document.getElementById("f-inv-indexador").value;
+          document.getElementById("f-inv-taxa-label").innerText = taxaLabel(indexador);
+          document.getElementById("f-inv-taxa").disabled = indexador === "Nenhum";
+        };
 
         window.openInvForm = () => { state.showInvForm = true; render(); };
         window.closeInvForm = () => { state.showInvForm = false; render(); };
@@ -1004,6 +1138,19 @@
                   </label>
                   <div class="grid grid-cols-2 gap-3">
                     <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
+                      Indexador
+                      <select id="f-inv-indexador" class="input-cls" onchange="window.onIndexadorChange()">
+                        ${["CDI","SELIC","IPCA+","Prefixado","Nenhum"].map(t => `<option value="${t}" ${state.invForm.indexador === t ? "selected" : ""}>${t}</option>`).join("")}
+                      </select>
+                    </label>
+                    <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
+                      <span id="f-inv-taxa-label">${taxaLabel(state.invForm.indexador)}</span>
+                      <input id="f-inv-taxa" type="number" step="0.01" class="input-cls" placeholder="Ex: 100" value="${state.invForm.taxa}" ${state.invForm.indexador === "Nenhum" ? "disabled" : ""}>
+                    </label>
+                  </div>
+                  <p class="text-[10px] text-[#8A8F98] -mt-1">A taxa é combinada automaticamente com o valor atual de CDI/SELIC/IPCA buscado do Banco Central para estimar o rendimento.</p>
+                  <div class="grid grid-cols-2 gap-3">
+                    <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
                       Valor (R$)
                       <input id="f-inv-valor" type="number" class="input-cls" placeholder="0,00" value="${state.invForm.valor}">
                     </label>
@@ -1124,12 +1271,14 @@
         window.submitInvForm = () => {
           const nome = document.getElementById("f-inv-nome").value;
           const tipo = document.getElementById("f-inv-tipo").value;
+          const indexador = document.getElementById("f-inv-indexador").value;
+          const taxa = document.getElementById("f-inv-taxa").value;
           const valor = document.getElementById("f-inv-valor").value;
           const data = document.getElementById("f-inv-data").value;
           const instituicao = document.getElementById("f-inv-inst").value;
 
           if (!nome || !valor) return;
-          state.investments.push({ id: uid(), nome, tipo, valor, data, instituicao });
+          state.investments.push({ id: uid(), nome, tipo, indexador, taxa, valor, data, instituicao });
           state.showInvForm = false;
           persistData();
           render();
