@@ -128,7 +128,7 @@
           editingShiftId: null,
           editingAppointmentId: null,
           shiftForm: { data: todayISO(), local: "", inicio: "19:00", fim: "07:00", valor: "", obs: "" },
-          appointmentForm: { data: todayISO(), titulo: "", horario: "10:00", local: "", obs: "" },
+          appointmentForm: { data: todayISO(), titulo: "", horario: "10:00", horarioFim: "11:00", local: "", obs: "" },
           
           activeCardId: "card1",
           showTxForm: false,
@@ -576,7 +576,7 @@
                     ${new Date(state.selectedDay + "T00:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
                   </h3>
                   <div class="flex gap-1.5">
-                    <button onclick="window.openAppointmentForm()" title="Adicionar Compromisso" class="p-1.5 rounded-md border border-[#2A313C] hover:border-[#C9A24B] text-[#EDE6D8]" style="background: #12171E;"><i data-lucide="calendar-plus" class="w-4 h-4 text-emerald-400"></i></button>
+                    <button onclick="window.openAppointmentForm()" title="Adicionar Compromisso" class="p-1.5 rounded-md border border-[#2A313C] hover:border-yellow-400 text-[#EDE6D8]" style="background: #12171E;"><i data-lucide="calendar-plus" class="w-4 h-4 text-yellow-400"></i></button>
                     <button onclick="window.openShiftForm()" title="Adicionar Plantão" class="p-1.5 rounded-md" style="background: ${accent}; color: #12171E;"><i data-lucide="plus" class="w-4 h-4"></i></button>
                   </div>
                 </div>
@@ -587,11 +587,11 @@
                   ${dayList.map(item => {
                     if (item.type === 'shift') {
                       return `
-                        <div class="bg-[#12171E] border border-[#2A313C] rounded-lg p-3 text-sm flex flex-col gap-1 border-l-4 border-l-[#C9A24B]">
+                        <div class="bg-[#12171E] border border-[#2A313C] rounded-lg p-3 text-sm flex flex-col gap-1 border-l-4 border-l-red-500">
                           <div class="flex justify-between items-start">
-                            <span class="font-medium text-[#EDE6D8] flex items-center gap-1.5"><i data-lucide="stethoscope" class="w-3.5 h-3.5 text-[#C9A24B]"></i> ${item.local}</span>
+                            <span class="font-medium text-[#EDE6D8] flex items-center gap-1.5"><i data-lucide="stethoscope" class="w-3.5 h-3.5 text-red-400"></i> ${item.local}</span>
                             <div class="flex items-center gap-2">
-                              <button onclick="window.editShift('${item.id}')" class="text-[#8A8F98] hover:text-[#C9A24B]"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                              <button onclick="window.editShift('${item.id}')" class="text-[#8A8F98] hover:text-red-400"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
                               <button onclick="window.removeShift('${item.id}')" class="text-[#8A8F98] hover:text-[#C2604A]"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                             </div>
                           </div>
@@ -602,15 +602,15 @@
                       `;
                     } else {
                       return `
-                        <div class="bg-[#12171E] border border-[#2A313C] rounded-lg p-3 text-sm flex flex-col gap-1 border-l-4 border-l-emerald-500">
+                        <div class="bg-[#12171E] border border-[#2A313C] rounded-lg p-3 text-sm flex flex-col gap-1 border-l-4 border-l-yellow-400">
                           <div class="flex justify-between items-start">
-                            <span class="font-medium text-[#EDE6D8] flex items-center gap-1.5"><i data-lucide="clock" class="w-3.5 h-3.5 text-emerald-400"></i> ${item.titulo}</span>
+                            <span class="font-medium text-[#EDE6D8] flex items-center gap-1.5"><i data-lucide="clock" class="w-3.5 h-3.5 text-yellow-400"></i> ${item.titulo}</span>
                             <div class="flex items-center gap-2">
-                              <button onclick="window.editAppointment('${item.id}')" class="text-[#8A8F98] hover:text-emerald-400"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                              <button onclick="window.editAppointment('${item.id}')" class="text-[#8A8F98] hover:text-yellow-400"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
                               <button onclick="window.removeAppointment('${item.id}')" class="text-[#8A8F98] hover:text-[#C2604A]"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                             </div>
                           </div>
-                          <span class="text-xs text-emerald-400 font-mono">Horário: ${item.horario} ${item.local ? '· ' + item.local : ''}</span>
+                          <span class="text-xs text-yellow-400 font-mono">Horário: ${item.horario}${item.horarioFim ? " – " + item.horarioFim : ""} ${item.local ? '· ' + item.local : ''}</span>
                           ${item.obs ? `<span class="text-xs text-[#8A8F98]">${item.obs}</span>` : ""}
                         </div>
                       `;
@@ -655,7 +655,7 @@
 
         window.openAppointmentForm = () => {
           state.editingAppointmentId = null;
-          state.appointmentForm = { data: state.selectedDay, titulo: "", horario: "10:00", local: "", obs: "" };
+          state.appointmentForm = { data: state.selectedDay, titulo: "", horario: "10:00", horarioFim: "11:00", local: "", obs: "" };
           state.showAppointmentForm = true;
           render();
         };
@@ -663,7 +663,7 @@
           const a = state.appointments.find(a => a.id === id);
           if (!a) return;
           state.editingAppointmentId = id;
-          state.appointmentForm = { data: a.data, titulo: a.titulo, horario: a.horario, local: a.local || "", obs: a.obs || "" };
+          state.appointmentForm = { data: a.data, titulo: a.titulo, horario: a.horario, horarioFim: a.horarioFim || "", local: a.local || "", obs: a.obs || "" };
           state.showAppointmentForm = true;
           render();
         };
@@ -1271,21 +1271,25 @@
               <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onclick="window.closeAppointmentForm()">
                 <div class="w-full max-w-md bg-[#1B2129] border border-[#2A313C] rounded-xl shadow-2xl p-5 flex flex-col gap-3" onclick="event.stopPropagation()">
                   <div class="flex items-center justify-between border-b border-[#2A313C] pb-3">
-                    <h3 class="font-serif text-lg text-emerald-400">${state.editingAppointmentId ? "Editar compromisso" : "Novo compromisso"}</h3>
+                    <h3 class="font-serif text-lg text-yellow-400">${state.editingAppointmentId ? "Editar compromisso" : "Novo compromisso"}</h3>
                     <button onclick="window.closeAppointmentForm()" class="text-[#8A8F98] hover:text-[#EDE6D8]"><i data-lucide="x" class="w-4 h-4"></i></button>
                   </div>
                   <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
                     Título do compromisso
                     <input id="f-app-titulo" class="input-cls" placeholder="Ex: Reunião / Consulta" value="${state.appointmentForm.titulo}" oninput="window.syncForm('appointmentForm','titulo',this.value)">
                   </label>
+                  <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
+                    Data
+                    <input id="f-app-data" type="date" class="input-cls" value="${state.appointmentForm.data}" oninput="window.syncForm('appointmentForm','data',this.value)">
+                  </label>
                   <div class="grid grid-cols-2 gap-3">
                     <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
-                      Data
-                      <input id="f-app-data" type="date" class="input-cls" value="${state.appointmentForm.data}" oninput="window.syncForm('appointmentForm','data',this.value)">
+                      Início
+                      <input id="f-app-horario" type="time" class="input-cls" value="${state.appointmentForm.horario}" oninput="window.syncForm('appointmentForm','horario',this.value)">
                     </label>
                     <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
-                      Horário
-                      <input id="f-app-horario" type="time" class="input-cls" value="${state.appointmentForm.horario}" oninput="window.syncForm('appointmentForm','horario',this.value)">
+                      Término
+                      <input id="f-app-horario-fim" type="time" class="input-cls" value="${state.appointmentForm.horarioFim}" oninput="window.syncForm('appointmentForm','horarioFim',this.value)">
                     </label>
                   </div>
                   <label class="flex flex-col gap-1 text-xs text-[#8A8F98] uppercase tracking-wide">
@@ -1296,7 +1300,7 @@
                     Observações
                     <input id="f-app-obs" class="input-cls" placeholder="Opcional" value="${state.appointmentForm.obs}" oninput="window.syncForm('appointmentForm','obs',this.value)">
                   </label>
-                  <button onclick="window.submitAppointmentForm()" class="mt-2 rounded-md py-2 text-sm font-semibold bg-emerald-500 text-[#12171E] hover:opacity-95">
+                  <button onclick="window.submitAppointmentForm()" class="mt-2 rounded-md py-2 text-sm font-semibold bg-yellow-400 text-[#12171E] hover:opacity-95">
                     ${state.editingAppointmentId ? "Salvar alterações" : "Salvar compromisso"}
                   </button>
                 </div>
@@ -1514,15 +1518,16 @@
           const titulo = document.getElementById("f-app-titulo").value;
           const data = document.getElementById("f-app-data").value;
           const horario = document.getElementById("f-app-horario").value;
+          const horarioFim = document.getElementById("f-app-horario-fim").value;
           const local = document.getElementById("f-app-local").value;
           const obs = document.getElementById("f-app-obs").value;
 
           if (!titulo) return;
           if (state.editingAppointmentId) {
-            state.appointments = state.appointments.map(a => a.id === state.editingAppointmentId ? { ...a, data: data || a.data, titulo, horario, local, obs } : a);
+            state.appointments = state.appointments.map(a => a.id === state.editingAppointmentId ? { ...a, data: data || a.data, titulo, horario, horarioFim, local, obs } : a);
             state.editingAppointmentId = null;
           } else {
-            state.appointments.push({ id: uid(), data: data || state.selectedDay, titulo, horario, local, obs });
+            state.appointments.push({ id: uid(), data: data || state.selectedDay, titulo, horario, horarioFim, local, obs });
           }
           state.showAppointmentForm = false;
           persistData();
