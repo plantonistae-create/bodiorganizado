@@ -1,0 +1,11 @@
+{
+  "name": "Jarvis Quick Capture+",
+  "short_name": "Jarvis Quick",
+  "start_url": "./?quick=1",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080C12",
+  "theme_color": "#12171E",
+  "lang": "pt-BR",
+  "description": "Captura rápida de gastos, receitas, lembretes, agenda e notas para o Painel Pessoal Jarvis."
+}
